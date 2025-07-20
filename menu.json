@@ -1,11 +1,23 @@
 {
-	"items": [
-		{"name": "Online-Screensaver",
-			"items" : [
-				{"name": "Update now",            "priority":0, "action": "bin/update.sh"},
-				{"name": "Enable auto-download",  "priority":0, "action": "bin/enable.sh",  "if": "\"/etc/upstart/onlinescreensaver.conf\" -f !" },
-				{"name": "Disable auto-download", "priority":0, "action": "bin/disable.sh", "if": "\"/etc/upstart/onlinescreensaver.conf\" -f" }
-			]
-		}
-	]
+  "items": [
+    {
+      "name": "Online-Screensaver",
+      "items": [
+        { "name": "Uninstall", "priority": 0, "action": "bin/uninstall.sh" },
+        { "name": "Update now", "priority": 0, "action": "bin/update.sh" },
+        {
+          "name": "Enable auto-download",
+          "priority": 0,
+          "action": "bin/enable.sh",
+          "if": "\"/etc/upstart/onlinescreensaver.conf\" -f !"
+        },
+        {
+          "name": "Disable auto-download",
+          "priority": 0,
+          "action": "bin/disable.sh",
+          "if": "\"/etc/upstart/onlinescreensaver.conf\" -f"
+        }
+      ]
+    }
+  ]
 }

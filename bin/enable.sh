@@ -5,12 +5,12 @@ cd "$(dirname "$0")"
 
 # load configuration
 if [ -e "config.sh" ]; then
-	source /mnt/us/extensions/onlinescreensaver/bin/config.sh
+	source ./config.sh
 fi
 
 # load utils
 if [ -e "utils.sh" ]; then
-	source  /mnt/us/extensions/onlinescreensaver/bin/utils.sh
+	source ./utils.sh
 else
 	echo "Could not find utils.sh in `pwd`"
 	exit
