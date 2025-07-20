@@ -1,6 +1,8 @@
-This is a fork of https://github.com/Kuhno92/onlinescreensaverPW2 which contains further power and stability fixes for the Kindle Paperwhite 2.
+This is a fork of https://github.com/Kuhno92/onlinescreensaverPW2, It contains power and stability fixes mostly focused on the Kindle Paperwhite 2, but tries to auto-detect features for each device and choose the most optimial power management solution.
 
-It should also run on most other Kindle devices, but hasn't been tested.
+This is a significant re-write, and needs testing.
+
+It should run on most Kindle devices, but hasn't been tested.
 
 ## Original Readme
 
@@ -9,8 +11,6 @@ THIS REPO CONTAINS THE ORIGINAL WORK OF Peterson from https://www.mobileread.com
 It additionally combines the info from D. Krannich https://blog.krannich.de/fhem-status-auf-kindle-paperwhite-3/
 
 to make this project work for the kindle paperwhite 2
-
-<a href="https://www.buymeacoffee.com/kuhno92" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
 Online Screensaver
 ------------------ v0.3
