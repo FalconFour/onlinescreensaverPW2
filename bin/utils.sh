@@ -23,6 +23,54 @@ fi
 export USE_SIMPLE_WAIT
 logger "USE_SIMPLE_WAIT is set to $USE_SIMPLE_WAIT"
 
+# Removed HOLD_ACTIVE - now using Screen Saver state management
+NA_STREAK_FILE=/var/local/system/onlinescreensaver_na_streak
+
+# If we accidentally end up Active, push back to Screen Saver
+ensure_screensaver_if_active () {
+    case "$(/usr/bin/powerd_test -s 2>/dev/null)" in *"Active"*) /usr/bin/powerd_test -p 2>/dev/null || true;; esac
+}
+
+wifi_cm_state () { lipc-get-prop com.lab126.wifid cmState 2>/dev/null || echo NA; }
+wifi_enabled ()  { lipc-get-prop com.lab126.cmd wirelessEnable 2>/dev/null || echo 0; }
+
+log_wifi_diag () {
+    local s en iscon ip ifline
+    s=$(wifi_cm_state); en=$(wifi_enabled)
+    iscon=$(lipc-get-prop com.lab126.wifid isConnected 2>/dev/null || echo NA)
+    ip=$(ip addr show wlan0 2>/dev/null | awk '/inet /{print $2}' | head -n1)
+    ifline=$(ip link show wlan0 2>/dev/null | head -n1)
+    logger "WiFi diag: cmState=$s enabled=$en isConnected=$iscon ip=${ip:-none} if=${ifline:-none}"
+}
+
+restart_wifi_services () {
+    for svc in wifid wlancond netwatchd; do
+        if command -v initctl >/dev/null 2>&1; then initctl restart "$svc" 2>/dev/null || true; fi
+        if [ -x "/etc/init.d/$svc" ]; then /etc/init.d/$svc restart 2>/dev/null || true; fi
+    done
+}
+
+recover_wifi_from_NA () {
+    logger "WiFi cmState=NA; beginning recovery"
+    powerd_soft_extend
+    log_wifi_diag
+    # Step 1: short wait for framework to report a real state
+    local t=0; while [ $t -lt 20 ]; do [ "$(wifi_cm_state)" != "NA" ] && return 0; t=$((t+1)); sleep 1; done
+    logger "Recovery step1 timed out; restarting Wi‑Fi services"
+    restart_wifi_services; sleep 5
+    local i; for i in 1 2 3 4 5; do [ "$(wifi_cm_state)" != "NA" ] && return 0; sleep 2; done
+    logger "Recovery step2 failed; toggling wirelessEnable"
+    lipc-set-prop com.lab126.cmd wirelessEnable 0; sleep 2; lipc-set-prop com.lab126.cmd wirelessEnable 1
+    logger "Waiting 12 seconds after toggle"; sleep 12
+    [ "$(wifi_cm_state)" != "NA" ] && return 0
+    logger "Recovery failed: cmState still NA"; return 1
+}
+
+# Track NA streak across runs
+na_streak_inc () { local n=0; [ -f "$NA_STREAK_FILE" ] && n=$(cat "$NA_STREAK_FILE" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$NA_STREAK_FILE"; echo $n; }
+na_streak_reset () { echo 0 > "$NA_STREAK_FILE"; }
+na_streak_read () { [ -f "$NA_STREAK_FILE" ] && cat "$NA_STREAK_FILE" 2>/dev/null || echo 0; }
+
 ##############################################################################
 # Logs a message to a log file (or to console if argument is /dev/stdout)
 
@@ -50,31 +98,28 @@ currentTime () {
 }
 
 ##############################################################################
-# Sets RTC wakeup using absolute time - more reliable than relative time
+# Sets RTC wakeup using relative time
 # arguments: $1 - time in seconds from now
 
-set_rtc_wakeup_absolute () {
-	WAKEUP_DELAY=$1
-	CURRENT_TIME=$(currentTime)
-	WAKEUP_TIME=$(( $CURRENT_TIME + $WAKEUP_DELAY ))
+set_rtc_wakeup_relative () {
+	local SECONDS_FROM_NOW=$1
 	
-	logger "Setting RTC wakeup in $WAKEUP_DELAY seconds (absolute time: $WAKEUP_TIME)"
-	
-	# Clear any existing alarm
-	echo 0 > /sys/class/rtc/rtc$RTC/wakealarm 2>/dev/null
-	
-	# Set new wakeup time
-	echo $WAKEUP_TIME > /sys/class/rtc/rtc$RTC/wakealarm 2>/dev/null
-	
-	# Verify the alarm was set correctly
-	SET_ALARM=$(cat /sys/class/rtc/rtc$RTC/wakealarm 2>/dev/null)
-	if [ "$SET_ALARM" = "$WAKEUP_TIME" ]; then
-			logger "RTC wakeup successfully set on rtc$RTC for $WAKEUP_TIME"
-			return 0
-	fi
+	# Set new wakeup time (rtcWakeup expects relative seconds)
+	lipc-set-prop -i com.lab126.powerd rtcWakeup $SECONDS_FROM_NOW
+	logger "RTC wakeup set for $SECONDS_FROM_NOW seconds from now ($(date -d @$(( $(currentTime) + $SECONDS_FROM_NOW )) +%H:%M:%S))"
+	return 0
+}
 
-	logger "RTC$RTC rejected the alarm (wanted $WAKEUP_TIME, got $SET_ALARM)"
-	return 1
+# runs when the system displays the screensaver
+log_ScreenSaver()
+{
+	logger "Screen Saver State"
+}
+
+# runs when the RTC wakes the system up
+log_Wakeup()
+{
+	logger "Wakeup State"
 }
 
 # utils.sh
@@ -95,172 +140,3 @@ set_suspend_alarm () {
     # Always program the hardware RTC ourselves as the primary alarm
     set_rtc_wakeup_absolute $SECS
 }
-
-##############################################################################
-# Battery‑efficient wait function that arms RTC **and** coordinates with powerd
-# arguments: $1 - time in seconds from now
-
-wait_for_suspend () {
-        WAIT_SECONDS=$1
-        logger "Starting battery-efficient wait for $WAIT_SECONDS seconds"
-
-        # Some older models have problems with the more advanced suspend logic.
-        # When USE_SIMPLE_WAIT is set we still set an RTC alarm but avoid the
-        # lipc‑wait loop used on newer devices.
-        if [ "x$USE_SIMPLE_WAIT" = "x1" ]; then
-                logger "Using simplified wait logic with RTC alarm"
-                set_suspend_alarm "$WAIT_SECONDS"
-                TARGET_TS=$(( $(currentTime) + WAIT_SECONDS ))
-                logger "Going to sleep at $(date +%H:%M:%S)"
-
-                # Loop in ~60s bursts so RTC wakeups break long sleeps
-                while [ $(currentTime) -lt $TARGET_TS ]; do
-                        NOW=$(currentTime)
-                        SECS_LEFT=$(( TARGET_TS - NOW ))
-                        if [ $SECS_LEFT -gt 60 ]; then
-                                SLEEP_LEN=60
-                        else
-                                SLEEP_LEN=$SECS_LEFT
-                        fi
-                        sleep $SLEEP_LEN
-                done
-
-                lipc-set-prop -i com.lab126.powerd readyToSuspend 0
-                logger "Woke at $(date +%H:%M:%S)"
-                restore_power_settings
-                return
-        fi
-
-           # Arm RTC *and* tell powerd; fall back if either fails
-        if set_suspend_alarm $WAIT_SECONDS ; then
-                logger "RTC alarm set, allowing device to suspend"
-                logger "Going to sleep at $(date +%H:%M:%S)"
-
-                # Enable CPU power saving
-                echo powersave > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
-
-                # Brief delay to ensure RTC is set, then allow natural suspension
-                sleep 1
-
-                # Wait for the wakeup event or timeout
-                ENDTIME=$(( $(currentTime) + $WAIT_SECONDS ))
-                while [ $(currentTime) -lt $ENDTIME ]; do
-                        lipc-wait-event -s $(( ENDTIME - $(currentTime) )) com.lab126.powerd resuming,wakeupFromSuspend 2>/dev/null || break
-
-                        # Check if we've reached our target time
-                        if [ $(currentTime) -ge $ENDTIME ]; then
-                                break
-                        fi
-
-                        sleep 0.1
-                done
-
-                lipc-set-prop -i com.lab126.powerd readyToSuspend 0
-
-                logger "Woke at $(date +%H:%M:%S)"
-                restore_power_settings
-        else
-                logger "RTC wakeup failed, falling back to regular sleep"
-                logger "Going to sleep at $(date +%H:%M:%S)"
-                sleep $WAIT_SECONDS
-                logger "Woke at $(date +%H:%M:%S)"
-                restore_power_settings
-        fi
-}
-
-##############################################################################
-# Clean RTC wakeup function for device shutdown/cleanup
-clear_rtc_wakeup () {
-	logger "Clearing RTC wakeup alarm"
-	echo 0 > /sys/class/rtc/rtc$RTC/wakealarm 2>/dev/null
-}
-
-##############################################################################
-# Check if device should be allowed to suspend
-can_suspend () {
-	# Check if we're in a state where suspension is beneficial
-	DEVICE_STATUS=$(lipc-get-prop com.lab126.powerd status 2>/dev/null)
-	
-	case "$DEVICE_STATUS" in
-		*"Active"*)
-			# Device is actively being used
-			return 1
-			;;
-		*"Screen Saver"*|*"Ready"*)
-			# Device can suspend
-			return 0
-			;;
-		*)
-			# Unknown state, allow suspension to be safe
-			return 0
-			;;
-	esac
-}
-
-##############################################################################
-# Optimized power management - reduces CPU usage and allows suspension
-enable_power_savings () {
-        logger "Enabling power saving optimizations"
-	
-	# Set CPU to power save mode
-	if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
-		echo powersave > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
-		logger "CPU set to powersave mode"
-	fi
-	
-	# Reduce CPU frequency if possible
-	if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed ]; then
-		MIN_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq 2>/dev/null)
-		if [ -n "$MIN_FREQ" ]; then
-			echo $MIN_FREQ > /sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed 2>/dev/null
-			logger "CPU frequency reduced to minimum: $MIN_FREQ"
-		fi
-	fi
-}
-
-restore_power_settings () {
-        logger "Restoring normal power settings"
-        if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
-                echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
-        fi
-}
-
-##############################################################################
-# Legacy functions kept for compatibility but improved
-
-# Original wait_for function - improved for better power management
-wait_for () {
-	wait_for_suspend $1
-}
-
-# Improved version of the original wait_for_fixed
-wait_for_fixed () {
-	logger "wait_for_fixed() started with power optimizations"
-	
-	enable_power_savings
-	
-	# Use our improved suspend-friendly wait
-	wait_for_suspend $1
-	
-	logger "wait_for_fixed() finished"
-}
-
-# runs when in the readyToSuspend state - improved version
-# set_rtc_wakeup() {
-# 	logger "Setting rtcWakeup property to $1 seconds"
-# 	lipc-set-prop -i com.lab126.powerd rtcWakeup $1 2>/dev/null
-	
-# 	# Also set direct RTC alarm as backup
-# 	set_rtc_wakeup_absolute $1
-# }
-
-##############################################################################
-# Cleanup function for graceful shutdown
-cleanup_and_exit () {
-	logger "Performing cleanup before exit"
-	clear_rtc_wakeup
-	exit 0
-}
-
-# Set up signal handlers for graceful shutdown
-trap cleanup_and_exit TERM INT QUIT

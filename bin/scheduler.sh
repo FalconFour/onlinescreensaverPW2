@@ -90,6 +90,17 @@ EOF
 
 ##############################################################################
 
+# Calculate seconds until next update from current time
+get_seconds_until_next_update () {
+        local CURRENT_TIME=$(currentTime)
+        local NEXT_TS=$(get_next_update_epoch $CURRENT_TIME)
+        local WAIT_SECONDS=$(( NEXT_TS - CURRENT_TIME ))
+        
+        # Minimum 5 minutes between updates
+        [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
+        
+        echo $WAIT_SECONDS
+}
 
 # Calculate epoch timestamp for next update after the given reference time
 # arguments: $1 - reference UNIX timestamp
@@ -177,60 +188,35 @@ do_update_cycle () {
 # use a 48 hour schedule
 extend_schedule
 
-# Main execution loop with error recovery
-while true; do
-        # Reload configuration and rebuild schedule in case it changed
-        if [ -e "config.sh" ]; then
-                source ./config.sh
-        fi
-        extend_schedule
-
-        DEVICE_STATUS=$(lipc-get-prop com.lab126.powerd status)
-        logger "Device status: $DEVICE_STATUS"
-	
-	case "$DEVICE_STATUS" in
-		*"Screen Saver"*)
-			logger "Device in screensaver mode - performing scheduled update"
-			
-			# Record start time for timeout detection
-			UPDATE_START_TIME=$(currentTime)
-			do_update_cycle
-			UPDATE_END_TIME=$(currentTime)
-			UPDATE_DURATION=$(( $UPDATE_END_TIME - $UPDATE_START_TIME ))
-			
-			logger "Update took $UPDATE_DURATION seconds"
-			
-                        # Wait for next scheduled update
-                        NEXT_TS=$(get_next_update_epoch $(currentTime))
-                        WAIT_SECONDS=$(( NEXT_TS - $(currentTime) ))
-                        [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
-                        logger "Next update scheduled at $(date -d @$NEXT_TS +%H:%M:%S)"
-                        wait_for_suspend $WAIT_SECONDS
-			;;
-		*"Ready"*)
-			logger "Device ready - performing scheduled update"
-			
-			# Record start time for timeout detection
-			UPDATE_START_TIME=$(currentTime)
-			do_update_cycle
-			UPDATE_END_TIME=$(currentTime)
-			UPDATE_DURATION=$(( $UPDATE_END_TIME - $UPDATE_START_TIME ))
-			
-			logger "Update took $UPDATE_DURATION seconds"
-			
-                        # Wait for next scheduled update
-                        NEXT_TS=$(get_next_update_epoch $(currentTime))
-                        WAIT_SECONDS=$(( NEXT_TS - $(currentTime) ))
-                        [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
-                        logger "Next update scheduled at $(date -d @$NEXT_TS +%H:%M:%S)"
-                        wait_for_suspend $WAIT_SECONDS
-			;;
-		*)
-			logger "Device in other state, waiting 60 seconds before recheck"
-			wait_for_suspend 60
-			;;
-	esac
-	
-	# Safety check - if we somehow get here without sleeping, add a small delay
-	sleep 1
+# Main event-driven loop
+logger "Starting event-driven scheduler - waiting for powerd events"
+lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyToSuspend | while read event; do
+    logger "Received event: $event"
+    
+    # Reload configuration on each event in case it changed
+    if [ -e "config.sh" ]; then
+        source ./config.sh
+    fi
+    extend_schedule
+    
+    case "$event" in
+        goingToScreenSaver*)
+            logger "Going to screensaver - performing scheduled update"
+            do_update_cycle
+            ;;
+        wakeupFromSuspend*)
+            logger "Waking from suspend - waiting 10 seconds for WiFi, then updating"
+            sleep 10
+            do_update_cycle
+            ;;
+        readyToSuspend*)
+            logger "Ready to suspend - setting RTC wakeup timer"
+            NEXT_UPDATE_SECONDS=$(get_seconds_until_next_update)
+            logger "Next update in $NEXT_UPDATE_SECONDS seconds"
+            set_rtc_wakeup_relative $NEXT_UPDATE_SECONDS
+            ;;
+        *)
+            logger "Unknown event: $event"
+            ;;
+    esac
 done
