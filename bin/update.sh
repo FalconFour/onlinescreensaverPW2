@@ -28,6 +28,12 @@ fi
 WIFI_CONNECTION=`lipc-get-prop com.lab126.wifid cmState`
 logger "WiFi connection state: $WIFI_CONNECTION"
 
+# Get battery status and build URL with parameters
+POWERD_OUTPUT=`/usr/bin/powerd_test -s`
+batteryLevel=`echo "$POWERD_OUTPUT" | awk -F: '/Battery Level/ {print substr($2, 1, length($2)-1) + 0}'`
+isCharging=`echo "$POWERD_OUTPUT" | awk -F: '/Charging/ {print substr($2,2,length($2))}'`
+IMAGE_URI_WITH_PARAMS="$IMAGE_URI?batteryLevel=$batteryLevel&isCharging=$isCharging"
+
 # Capture wget output and exit code for detailed logging
 WGET_OUTPUT=$(wget --no-check-certificate -q $IMAGE_URI_WITH_PARAMS -O $TMPFILE 2>&1)
 WGET_EXIT_CODE=$?
