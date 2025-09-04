@@ -1,8 +1,19 @@
-This is a fork of https://github.com/Kuhno92/onlinescreensaverPW2, It contains power and stability fixes mostly focused on the Kindle Paperwhite 2, but tries to auto-detect features for each device and choose the most optimial power management solution.
+This is a fork of https://github.com/Kuhno92/onlinescreensaverPW2 with significant power management and stability improvements. The main focus is on the Kindle Paperwhite 2, but it auto-detects device features and selects optimal power management strategies for each device.
 
-This is a significant re-write, and needs testing.
+## Recent Updates (Event-Driven Architecture)
 
-It should run on most Kindle devices, but hasn't been tested.
+**Latest Version Features:**
+- **Event-driven scheduler**: Uses `lipc-wait-event` to listen for power state changes instead of polling
+- **Improved power efficiency**: Only activates on specific power events (`goingToScreenSaver`, `wakeupFromSuspend`, `readyToSuspend`)
+- **Better RTC integration**: Sets proper wakeup alarms to prevent device sleeping indefinitely
+- **Enhanced timeout protection**: Update operations run with 5-minute timeout and proper process management
+- **Simplified logic**: Removed complex polling loops in favor of reactive event handling
+
+**Power Management:**
+- Responds to `goingToScreenSaver` → performs immediate update
+- Responds to `wakeupFromSuspend` → waits 10s for WiFi, then updates  
+- Responds to `readyToSuspend` → sets RTC timer for next scheduled update
+- Automatic fallback to simple wait logic for older devices (Paperwhite 2)
 
 ## Original Readme
 

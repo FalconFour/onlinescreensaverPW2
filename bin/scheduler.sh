@@ -24,13 +24,6 @@ else
         RTC=0
 fi
 
-# Log current configuration
-if [ -f /etc/prettyName ]; then
-    DEVICE_MODEL=$(cat /etc/prettyName)
-    logger "Detected device model: $DEVICE_MODEL"
-fi
-logger "Scheduler starting with USE_SIMPLE_WAIT=$USE_SIMPLE_WAIT"
-
 # load utils
 if [ -e "utils.sh" ]; then
 	source ./utils.sh
@@ -149,12 +142,32 @@ EOF
 do_update_cycle () {
 	logger "Starting update cycle"
 	
+        # Check initial WiFi status and log it
+        WIFI_STATUS=`lipc-get-prop com.lab126.cmd wirelessEnable`
+        logger "Initial WiFi status: $WIFI_STATUS"
+
+        # Enable wireless if it is currently off
+        if [ 0 -eq "$WIFI_STATUS" ]; then
+                logger "WiFi is off, turning it on now"
+                lipc-set-prop com.lab126.cmd wirelessEnable 1
+
+                # Give WiFi more time to initialize after turning on
+                logger "Waiting 10 seconds for WiFi to initialize..."
+                sleep 10
+        else
+                logger "WiFi was already enabled"
+        fi
+
+        # Check WiFi connection status
+        WIFI_CONNECTION=`lipc-get-prop com.lab126.wifid cmState`
+        logger "WiFi state after groggy toggle: $WIFI_CONNECTION"
+
 	# Run the update in background
 	sh ./update.sh &
 	UPDATE_PID=$!
 	
 	# Wait for update to complete with timeout
-	TIMEOUT=300  # 5 minutes
+	TIMEOUT=20  # 20 seconds
 	ELAPSED=0
 	
 	while [ $ELAPSED -lt $TIMEOUT ]; do
@@ -193,12 +206,9 @@ logger "Starting event-driven scheduler - waiting for powerd events"
 lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyToSuspend | while read event; do
     logger "Received event: $event"
     
-    # Reload configuration on each event in case it changed
-    if [ -e "config.sh" ]; then
-        source ./config.sh
-    fi
-    extend_schedule
-    
+    DEVICE_STATUS=$(lipc-get-prop com.lab126.powerd status)
+    logger "Device status: $DEVICE_STATUS"
+
     case "$event" in
         goingToScreenSaver*)
             logger "Going to screensaver - performing scheduled update"
@@ -219,4 +229,7 @@ lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyT
             logger "Unknown event: $event"
             ;;
     esac
+    
+    logger "Ensuring WiFi is turned off..."
+    lipc-set-prop com.lab126.cmd wirelessEnable 0
 done
