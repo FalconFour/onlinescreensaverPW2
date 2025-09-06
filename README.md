@@ -114,12 +114,12 @@ Your `IMAGE_URI` would typically point to the add-on: `http://your-ha-ip:5000`
 
 ## Device Compatibility
 
-Tested and optimized for all Kindle generations with firmware 5 or newer. The event-driven architecture provides consistent behavior across:
-- Kindle Paperwhite (all generations)
-- Kindle Basic/Touch models  
+Tested and optimized for Kindle devices with firmware 5 or newer. The event-driven architecture provides consistent behavior across:
+- Kindle Paperwhite (all generations)  
+- Kindle Basic/Touch models
 - Kindle Oasis models
 
-Behavior with 3G models is device-dependent but generally works well.
+**Note on older 3G models**: Early 3G-era Kindles (pre-2014) typically cannot run this extension due to firmware limitations (maxing out around firmware 2.5-3.1) and many lack WiFi connectivity entirely. The 3G network shutdown in 2021-2022 also eliminated cellular fallback options.
 
 ## Power Management Details
 
