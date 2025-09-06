@@ -7,29 +7,10 @@
 # Device specific defaults
 ##############################################################################
 
-# Some older models such as the Kindle Paperwhite 2 appear to have issues with
-# the advanced suspend logic used in the wait_for_suspend function.  On these
-# devices the scheduler would occasionally freeze after running for an hour or
-# so.  We try to detect the model and fall back to a simpler waiting logic
-# when necessary.
-
-if [ -z "$USE_SIMPLE_WAIT" ]; then
-    if [ -f /etc/prettyName ] && grep -qi "Paperwhite.*2" /etc/prettyName ; then
-        USE_SIMPLE_WAIT=1
-    else
-        USE_SIMPLE_WAIT=0
-    fi
-fi
-export USE_SIMPLE_WAIT
-logger "USE_SIMPLE_WAIT is set to $USE_SIMPLE_WAIT"
 
 # Removed HOLD_ACTIVE - now using Screen Saver state management
 NA_STREAK_FILE=/var/local/system/onlinescreensaver_na_streak
 
-# If we accidentally end up Active, push back to Screen Saver
-ensure_screensaver_if_active () {
-    case "$(/usr/bin/powerd_test -s 2>/dev/null)" in *"Active"*) /usr/bin/powerd_test -p 2>/dev/null || true;; esac
-}
 
 wifi_cm_state () { lipc-get-prop com.lab126.wifid cmState 2>/dev/null || echo NA; }
 wifi_enabled ()  { lipc-get-prop com.lab126.cmd wirelessEnable 2>/dev/null || echo 0; }
@@ -52,7 +33,6 @@ restart_wifi_services () {
 
 recover_wifi_from_NA () {
     logger "WiFi cmState=NA; beginning recovery"
-    powerd_soft_extend
     log_wifi_diag
     # Step 1: short wait for framework to report a real state
     local t=0; while [ $t -lt 20 ]; do [ "$(wifi_cm_state)" != "NA" ] && return 0; t=$((t+1)); sleep 1; done
@@ -110,33 +90,4 @@ set_rtc_wakeup_relative () {
 	return 0
 }
 
-# runs when the system displays the screensaver
-log_ScreenSaver()
-{
-	logger "Screen Saver State"
-}
 
-# runs when the RTC wakes the system up
-log_Wakeup()
-{
-	logger "Wakeup State"
-}
-
-# utils.sh
-set_suspend_alarm () {
-    SECS=$1
-
-    # Tell powerd we have finished our work and it may suspend now
-    lipc-set-prop -i com.lab126.powerd readyToSuspend 1
-
-    if [ $SECS -ge 300 ]; then
-        # ≥ 5 min → let powerd mirror the exact value
-        lipc-set-prop -i com.lab126.powerd rtcWakeup $SECS
-    else
-        # 60 – 299 s → satisfy powerd with the *minimum* accepted delta
-        lipc-set-prop -i com.lab126.powerd rtcWakeup 300
-    fi
-
-    # Always program the hardware RTC ourselves as the primary alarm
-    set_rtc_wakeup_absolute $SECS
-}

@@ -53,10 +53,10 @@ EOF
 		# create a filler
 		if [ $LASTEND -lt $START ]; then
 			SCHEDULE_ONE="$SCHEDULE_ONE $LASTENDHOUR:$LASTENDMINUTE-$STARTHOUR:$STARTMINUTE=$DEFAULTINTERVAL"
-			SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$LASTENDMINUTE-$(($STARTHOUR+24)):$STARTMINUTE=$DEFAULTINTERVAL"
+			SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$(printf '%02d' $LASTENDMINUTE)-$(($STARTHOUR+24)):$(printf '%02d' $STARTMINUTE)=$DEFAULTINTERVAL"
 		fi
 		SCHEDULE_ONE="$SCHEDULE_ONE $schedule"
-		SCHEDULE_TWO="$SCHEDULE_TWO $(($STARTHOUR+24)):$STARTMINUTE-$(($ENDHOUR+24)):$ENDMINUTE=$THISINTERVAL"
+		SCHEDULE_TWO="$SCHEDULE_TWO $(($STARTHOUR+24)):$(printf '%02d' $STARTMINUTE)-$(($ENDHOUR+24)):$(printf '%02d' $ENDMINUTE)=$THISINTERVAL"
 		
 		LASTENDHOUR=$ENDHOUR
 		LASTENDMINUTE=$ENDMINUTE
@@ -66,7 +66,7 @@ EOF
 	# check that the schedule goes to midnight
 	if [ $LASTEND -lt $(( 24*60 )) ]; then
 		SCHEDULE_ONE="$SCHEDULE_ONE $LASTENDHOUR:$LASTENDMINUTE-24:00=$DEFAULTINTERVAL"
-		SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$LASTENDMINUTE-48:00=$DEFAULTINTERVAL"
+		SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$(printf '%02d' $LASTENDMINUTE)-48:00=$DEFAULTINTERVAL"
 	fi
 	
         # to handle the day overlap, append the schedule again for hours 24-48.
@@ -215,8 +215,8 @@ lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyT
             do_update_cycle
             ;;
         wakeupFromSuspend*)
-            logger "Waking from suspend - waiting 10 seconds for WiFi, then updating"
-            sleep 10
+            logger "Waking from suspend - waiting 2 seconds for system, then updating"
+            sleep 2
             do_update_cycle
             ;;
         readyToSuspend*)

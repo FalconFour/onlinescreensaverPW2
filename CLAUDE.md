@@ -38,7 +38,7 @@ The project is a shell script-based system that integrates with Amazon's Kindle 
 **`bin/config.sh`** - Configuration file containing:
 - Update intervals and time-based schedules
 - Image URL and screensaver file paths
-- Power management settings (USE_SIMPLE_WAIT for older devices)
+- Power management settings
 - Network and logging configuration
 
 ### Event-Driven Architecture (Latest)
@@ -60,11 +60,9 @@ The scheduler now operates purely on power state events instead of polling:
 
 ### Key Technical Details
 
-- **RTC Detection**: Auto-detects working real-time clock (rtc0, rtc1, or rtc2) for device wakeups
 - **Power States**: Coordinates with powerd framework states (Ready, Screen Saver, Active)
 - **WiFi Recovery**: Multi-stage recovery from "NA" connection states including service restarts
-- **Simple Wait Mode**: Fallback logic for Kindle Paperwhite 2 and other devices with suspend issues
-- **Timeout Protection**: All update operations run with 5-minute timeout and proper process cleanup
+- **Timeout Protection**: All update operations run with 20-second timeout and proper process cleanup
 
 ## Common Development Tasks
 
@@ -84,8 +82,6 @@ The scheduler now operates purely on power state events instead of polling:
 Edit `bin/config.sh` for:
 - `IMAGE_URI` - URL endpoint for screensaver images
 - `SCHEDULE` - Time-based update intervals in "HH:MM-HH:MM=MINUTES" format
-- `USE_SIMPLE_WAIT` - Set to 1 for Paperwhite 2 compatibility
-- `DISABLE_WIFI` - Whether to turn off WiFi after updates
 
 ### Installation/Management via KUAL
 The `menu.json` defines KUAL menu items:
@@ -103,9 +99,7 @@ Logs are written to `/mnt/us/extensions/onlinescreensaver/log/onlinescreensaver.
 
 ## Device Compatibility Notes
 
-- **Paperwhite 2**: Requires `USE_SIMPLE_WAIT=1` due to suspend logic limitations
-- **Modern Kindles**: Use advanced lipc-wait-event based suspension
-- **RTC auto-detection**: Handles different clock device mappings across Kindle generations
+- **All Kindles**: Use event-driven lipc-wait-event based suspension
 - **Screen resolution**: Must match device exactly (configurable via SCREENSAVERFILE path)
 
 ## Recent Changes
@@ -114,13 +108,13 @@ Logs are written to `/mnt/us/extensions/onlinescreensaver/log/onlinescreensaver.
 - Replaced polling loop with `lipc-wait-event` for power efficiency
 - Added `get_seconds_until_next_update()` helper function
 - Fixed `set_rtc_wakeup_relative()` to properly use relative time parameters
-- Enhanced `do_update_cycle()` with timeout protection and background execution
+- Enhanced `do_update_cycle()` with 20-second timeout protection and background execution
 - Simplified main execution flow to be purely reactive to power events
 
 ### Critical Functions
 - `set_rtc_wakeup_relative(seconds)` - Sets RTC alarm for relative time from now
 - `get_seconds_until_next_update()` - Calculates time until next scheduled update
-- `do_update_cycle()` - Runs update.sh with 5-minute timeout protection
+- `do_update_cycle()` - Runs update.sh with 20-second timeout protection
 
 ## Important Instructions
 Do what has been asked; nothing more, nothing less.

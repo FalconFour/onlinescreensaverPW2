@@ -77,8 +77,4 @@ else
         logger "Removed incomplete temporary file $TMPFILE"
     fi
     
-    if [ 1 -eq $DONOTRETRY ]; then
-        touch $SCREENSAVERFILE
-        logger "Created empty screensaver file due to DONOTRETRY flag"
-    fi
 fi
