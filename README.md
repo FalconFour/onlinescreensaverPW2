@@ -1,6 +1,6 @@
 # Online Screensaver for Kindle
 
-An event-driven screensaver extension that automatically fetches images from a URL at scheduled intervals. Originally developed by Peterson and enhanced with significant power management improvements, this version transforms your Kindle into an ultra-low-power, always-on display perfect for Home Assistant dashboards, weather displays, or any application that can serve Kindle-compatible full-screen images.
+An event-driven screensaver extension that automatically fetches images from a URL at scheduled intervals. Originally developed by [peterson on MobileRead forums](https://www.mobileread.com/forums/showthread.php?t=236104) and enhanced with significant power management improvements, this version transforms your Kindle into an ultra-low-power, always-on display perfect for Home Assistant dashboards, weather displays, or any application that can serve Kindle-compatible full-screen images.
 
 ## Key Features
 
