@@ -202,11 +202,21 @@ do_update_cycle () {
 
 ##############################################################################
 
+# Signal handler for clean shutdown
+cleanup_and_exit () {
+	logger "Received shutdown signal - performing cleanup"
+	flush_temp_logs force
+	exit 0
+}
+
+# Set up signal traps for clean shutdown
+trap cleanup_and_exit INT TERM
+
 # Main event-driven loop
 logger "Starting event-driven scheduler - waiting for powerd events"
 
 # Flush any leftover temp logs from previous session
-flush_temp_logs
+flush_temp_logs force
 lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyToSuspend | while read event; do
     logger "Received event: $event"
     

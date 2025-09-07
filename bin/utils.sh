@@ -19,9 +19,11 @@ is_userstore_available () {
 ##############################################################################
 # Flushes temporary logs from RAM to FAT partition when safe
 # Only operates when userstore is available
+# Optional force parameter bypasses size check
 
 flush_temp_logs () {
 	local TEMP_LOG="/tmp/onlinescreensaver_new.log"
+	local FORCE_FLUSH="$1"
 	
 	# Skip if logging disabled or no LOGFILE set
 	if [ "x1" != "x$LOGGING" ] || [ -z "$LOGFILE" ] || [ "$LOGFILE" = "stdout" ] || [ "$LOGFILE" = "/dev/stdout" ]; then
@@ -36,6 +38,14 @@ flush_temp_logs () {
 	# Skip if userstore not available
 	if ! is_userstore_available; then
 		return
+	fi
+	
+	# Check file size - only flush if >= 32KB or forced
+	if [ "$FORCE_FLUSH" != "force" ]; then
+		local LOG_SIZE=$(stat -c%s "$TEMP_LOG" 2>/dev/null || echo "0")
+		if [ "$LOG_SIZE" -lt 32768 ]; then
+			return  # Wait for more logs to accumulate
+		fi
 	fi
 	
 	# Ensure log directory exists
@@ -72,7 +82,7 @@ logger () {
 	# Write to RAM-based temp log
 	echo `date`: $MSG >> "$TEMP_LOG"
 	
-	# Attempt to flush to FAT if safe (non-blocking)
+	# Attempt to flush to FAT if safe and log is large enough (non-blocking)
 	flush_temp_logs
 }
 
