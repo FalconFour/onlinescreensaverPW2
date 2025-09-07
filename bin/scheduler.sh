@@ -34,107 +34,105 @@ fi
 
 ###############################################################################
 
-# create a two day filling schedule
-extend_schedule () {
-	SCHEDULE_ONE=""
-	SCHEDULE_TWO=""
-
-	LASTENDHOUR=0
-	LASTENDMINUTE=0
-	LASTEND=0
-	for schedule in $SCHEDULE; do
-		read STARTHOUR STARTMINUTE ENDHOUR ENDMINUTE THISINTERVAL << EOF
-			$( echo " $schedule" | sed -e 's/[:,=,\,,-]/ /g' -e 's/\([^0-9]\)0\([[:digit:]]\)/\1\2/g')
-EOF
-		START=$(( 60*$STARTHOUR + $STARTMINUTE ))
-		END=$(( 60*$ENDHOUR + $ENDMINUTE ))
-
-		# if the previous schedule entry ended before this one starts,
-		# create a filler
-		if [ $LASTEND -lt $START ]; then
-			SCHEDULE_ONE="$SCHEDULE_ONE $LASTENDHOUR:$LASTENDMINUTE-$STARTHOUR:$STARTMINUTE=$DEFAULTINTERVAL"
-			SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$(printf '%02d' $LASTENDMINUTE)-$(($STARTHOUR+24)):$(printf '%02d' $STARTMINUTE)=$DEFAULTINTERVAL"
-		fi
-		SCHEDULE_ONE="$SCHEDULE_ONE $schedule"
-		SCHEDULE_TWO="$SCHEDULE_TWO $(($STARTHOUR+24)):$(printf '%02d' $STARTMINUTE)-$(($ENDHOUR+24)):$(printf '%02d' $ENDMINUTE)=$THISINTERVAL"
-		
-		LASTENDHOUR=$ENDHOUR
-		LASTENDMINUTE=$ENDMINUTE
-		LASTEND=$END
-	done
-
-	# check that the schedule goes to midnight
-	if [ $LASTEND -lt $(( 24*60 )) ]; then
-		SCHEDULE_ONE="$SCHEDULE_ONE $LASTENDHOUR:$LASTENDMINUTE-24:00=$DEFAULTINTERVAL"
-		SCHEDULE_TWO="$SCHEDULE_TWO $(($LASTENDHOUR+24)):$(printf '%02d' $LASTENDMINUTE)-48:00=$DEFAULTINTERVAL"
-	fi
-	
-        # to handle the day overlap, append the schedule again for hours 24-48.
-        SCHEDULE="$SCHEDULE_ONE $SCHEDULE_TWO"
-        logger "Full two day schedule: $SCHEDULE"
-
-        # Calculate timestamp for today's midnight
-        H=$(date +%-H)
-        M=$(date +%-M)
-        S=$(date +%-S)
-        SCHEDULE_BASE=$(( $(date +%s) - (H*3600 + M*60 + S) ))
-        logger "Schedule base timestamp: $SCHEDULE_BASE"
-}
 
 ##############################################################################
 
-# Calculate seconds until next update from current time
+# Calculate seconds until next update dynamically from current time and schedule
 get_seconds_until_next_update () {
-        local CURRENT_TIME=$(currentTime)
-        local NEXT_TS=$(get_next_update_epoch $CURRENT_TIME)
-        local WAIT_SECONDS=$(( NEXT_TS - CURRENT_TIME ))
-        
-        # Minimum 5 minutes between updates
-        [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
-        
-        echo $WAIT_SECONDS
-}
-
-# Calculate epoch timestamp for next update after the given reference time
-# arguments: $1 - reference UNIX timestamp
-get_next_update_epoch () {
-        REF_TS=$1
-        REF_MIN=$(( (REF_TS - SCHEDULE_BASE) / 60 ))
-        NEXT_MIN=-1
-
-        logger "Computing next update after $(date -d @$REF_TS +%H:%M:%S)"
-
-        for schedule in $SCHEDULE; do
-                read STARTHOUR STARTMINUTE ENDHOUR ENDMINUTE INTERVAL << EOF
-                        $( echo " $schedule" | sed -e 's/[:,=,\,,-]/ /g' -e 's/\([^0-9]\)0\([[:digit:]]\)/\1\2/g' )
+    local CURRENT_TIME=$(currentTime)
+    local CURRENT_HOUR=$(date +%H | sed 's/^0*//' | sed 's/^$/0/')
+    local CURRENT_MINUTE=$(date +%M | sed 's/^0*//' | sed 's/^$/0/')
+    local CURRENT_SECOND=$(date +%S | sed 's/^0*//' | sed 's/^$/0/')
+    
+    local CURRENT_MINUTES=$(( CURRENT_HOUR * 60 + CURRENT_MINUTE ))
+    local CURRENT_DAY_SECONDS=$(( CURRENT_HOUR * 3600 + CURRENT_MINUTE * 60 + CURRENT_SECOND ))
+    
+    logger "Current time: $(date +%H:%M:%S) ($CURRENT_MINUTES minutes from midnight)"
+    
+    # Find which schedule period we're currently in
+    for schedule in $SCHEDULE; do
+        read STARTHOUR STARTMINUTE ENDHOUR ENDMINUTE INTERVAL << EOF
+            $( echo " $schedule" | sed -e 's/[:,=,\,,,-]/ /g' -e 's/\([^0-9]\)0\([[:digit:]]\)/\1\2/g' )
 EOF
-                START=$(( 60*$STARTHOUR + $STARTMINUTE ))
-                END=$(( 60*$ENDHOUR + $ENDMINUTE ))
-
-                if [ $REF_MIN -lt $START ]; then
-                        NEXT_MIN=$START
-                        break
-                fi
-
-                if [ $REF_MIN -ge $START ] && [ $REF_MIN -lt $END ]; then
-                        TIME_IN_PERIOD=$(( REF_MIN - START ))
-                        COMPLETE_INTERVALS=$(( TIME_IN_PERIOD / INTERVAL ))
-                        CAND=$(( START + (COMPLETE_INTERVALS + 1) * INTERVAL ))
-                        if [ $CAND -ge $END ]; then
-                                NEXT_MIN=$END
-                        else
-                                NEXT_MIN=$CAND
-                        fi
-                        break
-                fi
-        done
-
-        if [ $NEXT_MIN -eq -1 ]; then
-                NEXT_MIN=$(( REF_MIN + ${DEFAULTINTERVAL:-240} ))
+        
+        local START_MIN=$(( STARTHOUR * 60 + STARTMINUTE ))
+        local END_MIN=$(( ENDHOUR * 60 + ENDMINUTE ))
+        
+        if [ $CURRENT_MINUTES -ge $START_MIN ] && [ $CURRENT_MINUTES -lt $END_MIN ]; then
+            # We're in this schedule period
+            logger "In schedule period: $STARTHOUR:$(printf '%02d' $STARTMINUTE)-$ENDHOUR:$(printf '%02d' $ENDMINUTE) (interval: ${INTERVAL}min)"
+            
+            local PERIOD_ELAPSED=$(( CURRENT_MINUTES - START_MIN ))
+            local COMPLETE_INTERVALS=$(( PERIOD_ELAPSED / INTERVAL ))
+            local NEXT_UPDATE_MIN=$(( START_MIN + (COMPLETE_INTERVALS + 1) * INTERVAL ))
+            
+            # If next update would be past the end of this period, use the end time
+            if [ $NEXT_UPDATE_MIN -ge $END_MIN ]; then
+                NEXT_UPDATE_MIN=$END_MIN
+            fi
+            
+            local NEXT_UPDATE_SECONDS=$(( NEXT_UPDATE_MIN * 60 ))
+            local WAIT_SECONDS=$(( NEXT_UPDATE_SECONDS - CURRENT_DAY_SECONDS ))
+            
+            # Minimum 5 minutes between updates
+            [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
+            
+            logger "Next update in $WAIT_SECONDS seconds"
+            echo $WAIT_SECONDS
+            return
         fi
-
-        echo $(( SCHEDULE_BASE + NEXT_MIN*60 ))
+    done
+    
+    # Not in any defined period - find next period start
+    local NEXT_START=-1
+    for schedule in $SCHEDULE; do
+        read STARTHOUR STARTMINUTE ENDHOUR ENDMINUTE INTERVAL << EOF
+            $( echo " $schedule" | sed -e 's/[:,=,\,,,-]/ /g' -e 's/\([^0-9]\)0\([[:digit:]]\)/\1\2/g' )
+EOF
+        
+        local START_MIN=$(( STARTHOUR * 60 + STARTMINUTE ))
+        
+        if [ $START_MIN -gt $CURRENT_MINUTES ]; then
+            if [ $NEXT_START -eq -1 ] || [ $START_MIN -lt $NEXT_START ]; then
+                NEXT_START=$START_MIN
+            fi
+        fi
+    done
+    
+    # If no period found after current time, use tomorrow's first period
+    if [ $NEXT_START -eq -1 ]; then
+        # Find first period of the day
+        for schedule in $SCHEDULE; do
+            read STARTHOUR STARTMINUTE ENDHOUR ENDMINUTE INTERVAL << EOF
+                $( echo " $schedule" | sed -e 's/[:,=,\,,,-]/ /g' -e 's/\([^0-9]\)0\([[:digit:]]\)/\1\2/g' )
+EOF
+            
+            local START_MIN=$(( STARTHOUR * 60 + STARTMINUTE ))
+            
+            if [ $NEXT_START -eq -1 ] || [ $START_MIN -lt $NEXT_START ]; then
+                NEXT_START=$START_MIN
+            fi
+        done
+        
+        # Add 24 hours for tomorrow
+        NEXT_START=$(( NEXT_START + 24*60 ))
+    fi
+    
+    local NEXT_START_SECONDS=$(( NEXT_START * 60 ))
+    local WAIT_SECONDS=$(( NEXT_START_SECONDS - CURRENT_DAY_SECONDS ))
+    
+    # Handle day wrap-around
+    if [ $WAIT_SECONDS -le 0 ]; then
+        WAIT_SECONDS=$(( WAIT_SECONDS + 24*3600 ))
+    fi
+    
+    # Minimum 5 minutes between updates
+    [ $WAIT_SECONDS -lt 300 ] && WAIT_SECONDS=300
+    
+    logger "Next update in $WAIT_SECONDS seconds (at next period start)"
+    echo $WAIT_SECONDS
 }
+
 
 ##############################################################################
 
@@ -197,9 +195,6 @@ do_update_cycle () {
 }
 
 ##############################################################################
-
-# use a 48 hour schedule
-extend_schedule
 
 # Main event-driven loop
 logger "Starting event-driven scheduler - waiting for powerd events"

@@ -19,7 +19,7 @@ The project is a shell script-based system that integrates with Amazon's Kindle 
 **`bin/scheduler.sh`** - Event-driven daemon using `lipc-wait-event`, managing:
 - Power state event listening (`goingToScreenSaver`, `wakeupFromSuspend`, `readyToSuspend`)
 - RTC alarm scheduling using device-specific real-time clocks  
-- Scheduled execution of updates based on time-of-day configuration
+- **Dynamic schedule calculation** from current time and config (no pre-computed schedules)
 - Automatic wakeup timer setting to prevent indefinite sleep
 
 **`bin/update.sh`** - Single update execution script that:
@@ -54,7 +54,7 @@ The scheduler now operates purely on power state events instead of polling:
    - Performs scheduled update
 
 3. **`readyToSuspend`** - Device about to sleep
-   - Calculates seconds until next scheduled update
+   - Dynamically calculates seconds until next scheduled update from current time
    - Sets RTC wakeup timer using `set_rtc_wakeup_relative`
    - Critical to prevent device sleeping indefinitely
 
@@ -104,16 +104,17 @@ Logs are written to `/mnt/us/extensions/onlinescreensaver/log/onlinescreensaver.
 
 ## Recent Changes
 
-### Event-Driven Refactor
-- Replaced polling loop with `lipc-wait-event` for power efficiency
-- Added `get_seconds_until_next_update()` helper function
-- Fixed `set_rtc_wakeup_relative()` to properly use relative time parameters
-- Enhanced `do_update_cycle()` with 20-second timeout protection and background execution
-- Simplified main execution flow to be purely reactive to power events
+### Dynamic Schedule Refactor (Latest)
+- **MAJOR**: Replaced pre-calculated 48-hour schedule system with real-time dynamic calculation
+- Eliminated schedule expiry bug that caused fallback to 30-minute intervals after 48+ hours
+- Removed `extend_schedule()` function and all complex schedule string manipulation (~100 lines)
+- `get_seconds_until_next_update()` now calculates directly from current time + config
+- **Infinite runtime capability** - no restart needed for long-term operation
+- Maintains exact same config format and behavior, just more reliable
 
 ### Critical Functions
 - `set_rtc_wakeup_relative(seconds)` - Sets RTC alarm for relative time from now
-- `get_seconds_until_next_update()` - Calculates time until next scheduled update
+- `get_seconds_until_next_update()` - **NEW**: Dynamically calculates next update from current time and schedule config
 - `do_update_cycle()` - Runs update.sh with 20-second timeout protection
 
 ## Important Instructions
