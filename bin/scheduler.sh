@@ -160,6 +160,12 @@ do_update_cycle () {
         WIFI_CONNECTION=`lipc-get-prop com.lab126.wifid cmState`
         logger "WiFi state after groggy toggle: $WIFI_CONNECTION"
 
+	# Check if userstore is available before attempting update
+	if ! is_userstore_available; then
+		logger "Skipping update - userstore not available (USB mass storage active)"
+		return
+	fi
+
 	# Run the update in background
 	sh ./update.sh &
 	UPDATE_PID=$!
@@ -198,6 +204,9 @@ do_update_cycle () {
 
 # Main event-driven loop
 logger "Starting event-driven scheduler - waiting for powerd events"
+
+# Flush any leftover temp logs from previous session
+flush_temp_logs
 lipc-wait-event -m com.lab126.powerd goingToScreenSaver,wakeupFromSuspend,readyToSuspend | while read event; do
     logger "Received event: $event"
     

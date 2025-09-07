@@ -16,7 +16,8 @@ An event-driven screensaver extension that automatically fetches images from a U
 
 **Reliable Operation**
 - 20-second timeout protection prevents hung updates
-- Multi-stage WiFi recovery handles connection issues gracefully  
+- Multi-stage WiFi recovery handles connection issues gracefully
+- USB-safe logging system prevents FAT corruption during USB mass storage mode  
 - Automatic RTC wakeup scheduling prevents indefinite sleep
 - Works across Kindle generations with unified event-driven approach
 

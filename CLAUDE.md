@@ -112,10 +112,19 @@ Logs are written to `/mnt/us/extensions/onlinescreensaver/log/onlinescreensaver.
 - **Infinite runtime capability** - no restart needed for long-term operation
 - Maintains exact same config format and behavior, just more reliable
 
+### USB-Safe Logging System (Latest)
+- **MAJOR**: Hybrid logging prevents FAT corruption during USB mass storage mode
+- Uses `lipc-get-prop com.lab126.volumd userstoreIsAvailable` to detect USB mounting state
+- Logs write to RAM (`/tmp/onlinescreensaver_new.log`) and flush to FAT only when safe
+- Updates are completely skipped when USB mass storage is active
+- **Critical fix** for filesystem corruption that could brick Kindle devices
+
 ### Critical Functions
 - `set_rtc_wakeup_relative(seconds)` - Sets RTC alarm for relative time from now
 - `get_seconds_until_next_update()` - **NEW**: Dynamically calculates next update from current time and schedule config
 - `do_update_cycle()` - Runs update.sh with 20-second timeout protection
+- `is_userstore_available()` - **NEW**: Detects if FAT partition is safe to write (USB state)
+- `flush_temp_logs()` - **NEW**: Safely moves RAM logs to FAT when USB disconnected
 
 ## Important Instructions
 Do what has been asked; nothing more, nothing less.
