@@ -119,6 +119,19 @@ Logs are written to `/mnt/us/extensions/onlinescreensaver/log/onlinescreensaver.
 - Updates are completely skipped when USB mass storage is active
 - **Critical fix** for filesystem corruption that could brick Kindle devices
 
+### Power State Machine Research (Latest Debug Console Analysis)
+**Complete Event Sequence Discovered:**
+- `goingToScreenSaver` → 60s screensaver timeout → `readyToSuspend` countdown
+- **ReadyToSuspend Pattern**: `10 → 8 → 7 → 6 → 2 → 1` (semi-random, ~5s intervals, ~35-40s total)
+- `suspending "mem"` → CPU sleep (only seen after wakeup, no action possible)
+- **Wake Sequence**: `wakeupFromSuspend` → `resuming` → `t1TimerReset` → `outOfScreenSaver` → `exitingScreenSaver` (all within 1 second)
+
+**Power Optimization Opportunities:**
+- RTC alarm could be set on first `readyToSuspend 10` instead of last event
+- `resuming` event may be triggered by script WiFi activation (needs investigation)
+- ~40-second suspend preparation window available for cleanup operations
+- `wakeupFromSuspend` number indicates actual sleep duration in seconds
+
 ### Critical Functions
 - `set_rtc_wakeup_relative(seconds)` - Sets RTC alarm for relative time from now
 - `get_seconds_until_next_update()` - **NEW**: Dynamically calculates next update from current time and schedule config
